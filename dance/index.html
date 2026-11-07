@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Dancing Figure</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one full-screen stage; the figure sits in a dim display case, controls float at the bottom edge */
+:root{padding-top:env(safe-area-inset-top);
+  --bg:#ecebef; --bg2:#d9d6df; --fg:#1d1a22; --muted:#6c6675; --accent:#d2368a; --panel:rgba(255,255,255,.72); --line:rgba(29,26,34,.14);
+  --f-ui:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141218; --bg2:#26222d; --fg:#f2eff5; --muted:#9a93a5; --accent:#ff5fae; --panel:rgba(30,27,36,.72); --line:rgba(242,239,245,.14); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141218; --bg2:#26222d; --fg:#f2eff5; --muted:#9a93a5; --accent:#ff5fae; --panel:rgba(30,27,36,.72); --line:rgba(242,239,245,.14); color-scheme:dark}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{background:radial-gradient(120% 80% at 50% 35%,var(--bg2),var(--bg) 70%);color:var(--fg);font-family:var(--f-ui);overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
+#stage{position:fixed;inset:0;display:block;width:100%;height:100%}
+.hud{position:fixed;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;gap:10px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:12px calc(16px + env(safe-area-inset-bottom,0px));pointer-events:none}
+.bar{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;pointer-events:auto}
+button{font:700 14px/1 var(--f-ui);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:12px 18px;
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);cursor:pointer}
+button.primary{background:var(--accent);border-color:transparent;color:#fff}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.readout{font:400 11px/1.4 var(--f-mono);color:var(--muted);letter-spacing:.04em;font-variant-numeric:tabular-nums;text-align:center}
+.top{position:fixed;top:0;left:0;right:0;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:calc(14px + env(safe-area-inset-top,0px)) 0;display:flex;justify-content:space-between;align-items:baseline;pointer-events:none}
+.name{font-weight:700;font-size:15px;letter-spacing:.02em}
+.mode{font:600 10px/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+#msg{max-width:30em;text-align:center;font-size:13px;line-height:1.6;color:var(--muted)}
+#load{position:fixed;inset:0;display:grid;place-items:center;font:400 12px var(--f-mono);color:var(--muted);letter-spacing:.08em;pointer-events:none}
+</style>
+
+</head><body>
+</head><body>
+<canvas id="stage"></canvas>
+<div id="load">LOADING MODEL…</div>
+<div class="top"><span class="name">DANCE</span><span class="mode" id="mode">DRAG</span></div>
+<div class="hud">
+  <p id="msg">指でドラッグして回せます。スマホでは「ジャイロで見る」を押すと、本体の傾きでフィギュアを覗き込めます。</p>
+  <div class="bar">
+    <button id="gyroBtn" class="primary" type="button">ジャイロで見る</button>
+    <button id="centerBtn" type="button">正面に戻す</button>
+    <button id="playBtn" type="button">一時停止</button>
+    <button id="turnBtn" type="button">モデルを90°回す</button>
+  </div>
+  <div class="readout" id="readout">yaw 0° · pitch 0°</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/environments/RoomEnvironment.js"></script>
+<script>
+(() => {
+const MODEL_URL = "model.glb";
+let mixer = null, playing = true;
+const clock = new THREE.Clock();
+const canvas = document.getElementById("stage");
+const $ = id => document.getElementById(id);
+
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 100);
+const key = new THREE.DirectionalLight(0xffffff, 1.6);
+key.position.set(2, 4, 3); key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0005;
+scene.add(key, new THREE.HemisphereLight(0xffffff, 0x443344, 0.35));
+
+const floor = new THREE.Mesh(new THREE.CircleGeometry(3, 64), new THREE.ShadowMaterial({opacity:0.28}));
+floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
+
+const holder = new THREE.Group(); scene.add(holder);
+const target = new THREE.Vector3(0, 0.5, 0);
+let radius = 3;
+
+new THREE.GLTFLoader().load(MODEL_URL, gltf => {
+  const m = gltf.scene;
+  m.traverse(o => { if (o.isMesh){ o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+  if (gltf.animations && gltf.animations.length){
+    mixer = new THREE.AnimationMixer(m);
+    const clip = gltf.animations.reduce((a,b) => b.duration > a.duration ? b : a);
+    // keep the dancer centred: remove horizontal drift from the root/hips position track
+    clip.tracks.forEach(t => {
+      if (!/\.position$/.test(t.name)) return;
+      const n = t.name.toLowerCase();
+      if (!(n.includes("hip") || n.includes("root") || n.includes("pelvis"))) return;
+      const v = t.values, x0 = v[0], z0 = v[2];
+      for (let i = 0; i < v.length; i += 3){ v[i] = x0; v[i+2] = z0; }
+      console.log("locked track", t.name);
+    });
+    mixer.clipAction(clip).play();
+    console.log("clips:", gltf.animations.map(c => c.name + " " + c.duration.toFixed(2) + "s").join(", "));
+  } else { $("playBtn").hidden = true; }
+  // Normalize: height 1, base on floor, centered
+  if (mixer) mixer.setTime(0);
+  const box = posedBox(m);
+  const size = box.getSize(new THREE.Vector3());
+  const s = 1 / size.y; m.scale.multiplyScalar(s);
+  const b2 = posedBox(m), c = b2.getCenter(new THREE.Vector3());
+  m.position.set(-c.x, -b2.min.y, -c.z);
+  holder.add(m);
+  target.set(0, 0.5, 0);
+  const sh = key.shadow.camera; sh.left=-1; sh.right=1; sh.top=1.5; sh.bottom=-0.5; sh.updateProjectionMatrix();
+  $("load").hidden = true;
+}, undefined, err => { $("load").textContent = "モデルを読み込めませんでした"; console.error(err); });
+
+function posedBox(root){
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3(), v = new THREE.Vector3();
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.attributes.position, step = Math.max(1, Math.floor(pos.count / 4000));
+    if (o.isSkinnedMesh) o.skeleton.update();
+    for (let i = 0; i < pos.count; i += step){
+      v.fromBufferAttribute(pos, i);
+      if (o.isSkinnedMesh) o.boneTransform(i, v);
+      v.applyMatrix4(o.matrixWorld); box.expandByPoint(v);
+    }
+  });
+  return box;
+}
+function resize(){
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false); camera.aspect = w/h;
+  // fit 1-unit-tall figure (+ margin) in the frame for either orientation
+  const vFov = THREE.MathUtils.degToRad(camera.fov);
+  const fitH = 1.35 / (2*Math.tan(vFov/2));
+  const fitW = 0.9 / (2*Math.tan(vFov/2)*camera.aspect);
+  radius = Math.max(fitH, fitW);
+  camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize); resize();
+
+/* ---------- orientation ---------- */
+const goalQ = new THREE.Quaternion(), curQ = new THREE.Quaternion();
+const tmpE = new THREE.Euler(), qX = new THREE.Quaternion(-Math.sqrt(.5),0,0,Math.sqrt(.5)), qScreen = new THREE.Quaternion();
+const zee = new THREE.Vector3(0,0,1);
+const yawOffset = new THREE.Quaternion();
+let devQ = null, mode = "drag", needCenter = false;
+
+// drag state (fallback)
+let dragYaw = 0, dragPitch = 0.12;
+function dragQuat(){ tmpE.set(-dragPitch, dragYaw, 0, "YXZ"); return new THREE.Quaternion().setFromEuler(tmpE); }
+
+function screenAngle(){ return (screen.orientation && screen.orientation.angle) || window.orientation || 0; }
+function onOrient(e){
+  if (e.alpha == null) return;
+  const a = THREE.MathUtils.degToRad(e.alpha), b = THREE.MathUtils.degToRad(e.beta), g = THREE.MathUtils.degToRad(e.gamma);
+  tmpE.set(b, a, -g, "YXZ");
+  const q = new THREE.Quaternion().setFromEuler(tmpE).multiply(qX);
+  qScreen.setFromAxisAngle(zee, -THREE.MathUtils.degToRad(screenAngle()));
+  q.multiply(qScreen);
+  devQ = q;
+  if (needCenter){ center(); needCenter = false; }
+}
+function center(){
+  if (mode === "gyro" && devQ){
+    // remove current heading so the phone's present direction looks at the figure's front
+    const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(devQ);
+    const heading = Math.atan2(-fwd.x, -fwd.z);
+    yawOffset.setFromAxisAngle(new THREE.Vector3(0,1,0), -heading);
+  } else { dragYaw = 0; dragPitch = 0.12; }
+}
+
+async function startGyro(){
+  try{
+    if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function"){
+      const r = await DeviceOrientationEvent.requestPermission();
+      if (r !== "granted"){ $("msg").textContent = "センサーの使用が許可されませんでした。ドラッグ操作で見られます。"; return; }
+    }
+  }catch(err){ $("msg").textContent = "この画面ではセンサーを使えません。ドラッグ操作で見られます。"; return; }
+  addEventListener("deviceorientation", onOrient);
+  const t = setTimeout(() => { if (!devQ){ mode="drag"; $("mode").textContent="DRAG";
+    $("msg").textContent = "傾きの情報が届きません。スマホのブラウザで、HTTPSのページとして開いてください。"; } }, 1500);
+  mode = "gyro"; needCenter = true; $("mode").textContent = "GYRO";
+  $("msg").textContent = "スマホを立てると正面、真下に向けると頭上、右に回すと右側面が見えます。";
+  $("gyroBtn").hidden = true;
+}
+$("gyroBtn").addEventListener("click", startGyro);
+$("centerBtn").addEventListener("click", center);
+$("playBtn").addEventListener("click", () => { playing = !playing; $("playBtn").textContent = playing ? "一時停止" : "再生"; });
+window.__seek = t => { if (mixer){ mixer.setTime(t); } playing = false; };
+$("turnBtn").addEventListener("click", () => { holder.rotation.y += Math.PI/2; });
+
+// pointer drag
+let pid = null, px = 0, py = 0;
+canvas.addEventListener("pointerdown", e => { pid = e.pointerId; px = e.clientX; py = e.clientY; canvas.setPointerCapture(pid); });
+canvas.addEventListener("pointermove", e => {
+  if (e.pointerId !== pid) return;
+  if (mode === "gyro"){ // horizontal drag nudges the heading in gyro mode
+    yawOffset.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), -(e.clientX-px)*0.008));
+  } else {
+    dragYaw -= (e.clientX-px)*0.008;
+    dragPitch = THREE.MathUtils.clamp(dragPitch + (e.clientY-py)*0.008, -0.6, Math.PI/2 - 0.01);
+  }
+  px = e.clientX; py = e.clientY;
+});
+canvas.addEventListener("pointerup", () => pid = null);
+canvas.addEventListener("pointercancel", () => pid = null);
+
+window.__setView = (y, p) => { mode = "drag"; dragYaw = y; dragPitch = p; first = true; };
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const fwd = new THREE.Vector3();
+let first = true;
+function tick(){
+  const dt = clock.getDelta();
+  if (mixer && playing) mixer.update(dt);
+  if (mode === "gyro" && devQ) goalQ.copy(yawOffset).multiply(devQ);
+  else goalQ.copy(dragQuat());
+  if (first){ curQ.copy(goalQ); first = false; }
+  else curQ.slerp(goalQ, reduce ? 1 : 0.18);
+  camera.quaternion.copy(curQ);
+  fwd.set(0,0,-1).applyQuaternion(curQ);
+  camera.position.copy(target).addScaledVector(fwd, -radius);
+  // readout: heading around figure and elevation
+  const yaw = Math.round(THREE.MathUtils.radToDeg(Math.atan2(-fwd.x, -fwd.z)));
+  const pitch = Math.round(THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(-fwd.y,-1,1))));
+  $("readout").textContent = `yaw ${yaw}° · pitch ${pitch}°`;
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+tick();
+})();
+</script>
+</body></html>
+</body></html>
