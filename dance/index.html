@@ -118,9 +118,54 @@ new THREE.GLTFLoader().load(MODEL_URL, gltf => {
   holder.add(m);
   target.set(0, 0.5, 0);
   const sh = key.shadow.camera; sh.left=-1; sh.right=1; sh.top=1.5; sh.bottom=-0.5; sh.updateProjectionMatrix();
+  skirtRig = setupSkirt(m);
   $("load").hidden = true;
 }, undefined, err => { $("load").textContent = "モデルを読み込めませんでした"; console.error(err); });
 
+/* ---------- skirt helper bones: lift skirt panels away from the thighs ---------- */
+let skirtRig = null;
+function setupSkirt(root){
+  const bones = {}; root.traverse(o => { if (o.isBone || /^Skirt_\d+$/.test(o.name)) bones[o.name] = o; });
+  const hips = bones.Hips; if (!hips) return null;
+  const panels = Object.keys(bones).filter(n => /^Skirt_\d+$/.test(n)).map(n => bones[n]);
+  if (!panels.length) return null;
+  const legs = [["LeftUpLeg","LeftLeg"],["RightUpLeg","RightLeg"]].map(([a,b]) => [bones[a], bones[b]]).filter(x => x[0] && x[1]);
+  const items = panels.map(b => {
+    const ex = b.userData || {};
+    const dir = new THREE.Vector3().fromArray(ex.dir || [0,-1,0]).normalize();
+    const up = new THREE.Vector3().fromArray(ex.up || [0,1,0]).normalize();
+    const h = dir.clone().addScaledVector(up, -dir.dot(up)).normalize();
+    const axis = new THREE.Vector3().crossVectors(h, up).normalize();
+    // make sure a positive angle swings the panel outward along h
+    const test = dir.clone().applyAxisAngle(axis, 0.1);
+    if (test.dot(h) < dir.dot(h)) axis.negate();
+    const flare = Math.atan2(dir.dot(h), -dir.dot(up));
+    return { b, up, h, axis, flare, cur: 0 };
+  });
+  return { hips, legs, items, inv: new THREE.Matrix4(), pa: new THREE.Vector3(), pb: new THREE.Vector3() };
+}
+function updateSkirt(dt){
+  const r = skirtRig; if (!r) return;
+  r.items.forEach(it => it.b.quaternion.identity());
+  r.hips.updateWorldMatrix(true, true);
+  r.inv.copy(r.hips.matrixWorld).invert();
+  // knee positions in hips space; the skirt must open far enough to cover them
+  const knees = r.legs.map(([a,b]) => new THREE.Vector3().setFromMatrixPosition(b.matrixWorld).applyMatrix4(r.inv));
+  const margin = 0.22, maxA = 1.35, k = Math.min(1, dt * 14);
+  r.items.forEach(it => {
+    let need = 0;
+    knees.forEach(kn => {
+      const q = kn.clone().sub(it.b.position);
+      const out = q.dot(it.h), down = -q.dot(it.up);
+      if (out <= 0) return;
+      const a = Math.atan2(out, Math.max(1e-4, down));
+      need = Math.max(need, a + margin - it.flare);
+    });
+    need = Math.min(maxA, Math.max(0, need));
+    it.cur += (need - it.cur) * (reduce ? 1 : k);
+    it.b.quaternion.setFromAxisAngle(it.axis, it.cur);
+  });
+}
 function posedBox(root){
   root.updateMatrixWorld(true);
   const box = new THREE.Box3(), v = new THREE.Vector3();
@@ -196,7 +241,7 @@ async function startGyro(){
 $("gyroBtn").addEventListener("click", startGyro);
 $("centerBtn").addEventListener("click", center);
 $("playBtn").addEventListener("click", () => { playing = !playing; $("playBtn").textContent = playing ? "一時停止" : "再生"; });
-window.__seek = t => { if (mixer){ mixer.setTime(t); } playing = false; };
+window.__seek = t => { if (mixer){ mixer.setTime(t); } playing = false; updateSkirt(1); };
 $("turnBtn").addEventListener("click", () => { holder.rotation.y += Math.PI/2; });
 
 // pointer drag
@@ -222,6 +267,7 @@ let first = true;
 function tick(){
   const dt = clock.getDelta();
   if (mixer && playing) mixer.update(dt);
+  updateSkirt(playing ? dt : 1);
   if (mode === "gyro" && devQ) goalQ.copy(yawOffset).multiply(devQ);
   else goalQ.copy(dragQuat());
   if (first){ curQ.copy(goalQ); first = false; }
