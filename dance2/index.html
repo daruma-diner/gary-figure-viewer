@@ -69,7 +69,7 @@ const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 0.8;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -92,7 +92,7 @@ let radius = 3;
 
 new THREE.GLTFLoader().load(MODEL_URL, gltf => {
   const m = gltf.scene;
-  m.traverse(o => { if (o.isMesh){ o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+  m.traverse(o => { if (o.isMesh){ o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; tuneMaterial(o.material); } });
   if (gltf.animations && gltf.animations.length){
     mixer = new THREE.AnimationMixer(m);
     const clip = gltf.animations.reduce((a,b) => b.duration > a.duration ? b : a);
@@ -165,6 +165,22 @@ function updateSkirt(dt){
     it.cur += (need - it.cur) * (reduce ? 1 : k);
     it.b.quaternion.setFromAxisAngle(it.axis, it.cur);
   });
+}
+/* colour tuning: generated PBR maps make the figure look washed out under studio light */
+function tuneMaterial(mat){
+  if (!mat) return;
+  mat.metalness = 0; mat.envMapIntensity = 0.55;
+  const mp = mat.map;
+  if (mp && mp.image){
+    try{
+      const c = document.createElement("canvas"); c.width = mp.image.width; c.height = mp.image.height;
+      const x = c.getContext("2d"); x.filter = "saturate(1.25) contrast(1.05)"; x.drawImage(mp.image, 0, 0);
+      const t = new THREE.CanvasTexture(c);
+      t.flipY = mp.flipY; t.encoding = mp.encoding; t.wrapS = mp.wrapS; t.wrapT = mp.wrapT; t.anisotropy = 4;
+      mat.map = t;
+    }catch(e){ console.warn("texture tuning skipped", e); }
+  }
+  mat.needsUpdate = true;
 }
 function posedBox(root){
   root.updateMatrixWorld(true);
