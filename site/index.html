@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Tilt Figure — 傾けて覗く3Dフィギュアの作り方</title>
+<meta name="description" content="AIで作ったキャラクターを、スマホの傾きやカーソルで覗き込める3Dフィギュアにするまでの手順をまとめました。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="preload" as="image" href="poster.webp">
+<style>
+/* Layout: a figure-display hero (live 3D) followed by a numbered build log, a checklist and lessons learned.
+   Palette is lifted from the character's outfit: cyan sock, magenta knot, yellow sock, on a lilac studio grey. */
+:root{
+  --paper:#f2f0f5; --paper-2:#e6e2ec; --card:#ffffff; --ink:#1c1a22; --muted:#6a6475; --line:rgba(28,26,34,.12);
+  --cyan:#13a9bb; --magenta:#d93a8a; --yellow:#e9b417; --denim:#4a6fa8;
+  --f-display:"Dela Gothic One","Hiragino Kaku Gothic StdN",system-ui,sans-serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --gut:max(20px,env(safe-area-inset-left,0px));
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --paper:#15131a; --paper-2:#211e28; --card:#1d1a24; --ink:#f1eef5; --muted:#a39cad; --line:rgba(241,238,245,.13);
+  --cyan:#3fd0e0; --magenta:#ff62ad; --yellow:#ffcf3f; --denim:#86a6dc; color-scheme:dark}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 16px/1.85 var(--f-body);-webkit-font-smoothing:antialiased}
+a{color:inherit}
+img{max-width:100%}
+[hidden]{display:none!important}
+.wrap{max-width:1120px;margin:0 auto;padding-left:var(--gut);padding-right:max(20px,env(safe-area-inset-right,0px))}
+
+/* ---------- hero ---------- */
+.hero{position:relative;height:min(100svh,920px);min-height:600px;overflow:hidden;
+  background:
+    radial-gradient(60% 55% at 62% 42%, color-mix(in srgb,var(--cyan) 18%,transparent), transparent 70%),
+    radial-gradient(45% 40% at 78% 72%, color-mix(in srgb,var(--magenta) 14%,transparent), transparent 70%),
+    linear-gradient(180deg,var(--paper-2),var(--paper));}
+.hero::after{content:"";position:absolute;left:0;right:0;bottom:0;height:22%;
+  background:repeating-linear-gradient(90deg,transparent 0 47px,var(--line) 47px 48px);
+  -webkit-mask-image:linear-gradient(transparent,#000);mask-image:linear-gradient(transparent,#000);pointer-events:none}
+#poster,#stage{position:absolute;inset:0;width:100%;height:100%}
+#poster{top:4%;height:92%}
+#poster{object-fit:contain;object-position:75% 50%;transition:opacity .6s ease}
+#stage{opacity:0;transition:opacity .6s ease}
+.hero.live #stage{opacity:1}.hero.live #poster{opacity:0}
+.hero-copy{position:absolute;z-index:2;left:var(--gut);bottom:clamp(28px,7vh,72px);max-width:min(620px,56%);pointer-events:none}
+.eyebrow{font:600 12px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--magenta);display:flex;gap:10px;align-items:center}
+.eyebrow::before{content:"";width:28px;height:2px;background:currentColor}
+h1{font-family:var(--f-display);font-weight:400;font-size:clamp(34px,4.6vw,62px);word-break:keep-all;line-height:1.12;margin:.35em 0 .3em;letter-spacing:.01em;text-wrap:balance}
+h1 em{font-style:normal;color:var(--cyan)}
+h1 span{white-space:nowrap}
+.lede{font-size:clamp(15px,1.4vw,17px);color:var(--muted);max-width:30em;margin:0}
+.hero-ui{position:absolute;z-index:3;right:max(20px,env(safe-area-inset-right,0px));top:calc(18px + env(safe-area-inset-top,0px));display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.spec{font:400 11px/1.6 var(--f-mono);color:var(--muted);text-align:right;font-variant-numeric:tabular-nums;background:color-mix(in srgb,var(--card) 70%,transparent);
+  border:1px solid var(--line);border-radius:10px;padding:8px 12px;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.spec b{color:var(--ink);font-weight:600}
+.btn{font:700 14px/1 var(--f-body);color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:12px 18px;cursor:pointer;
+  display:inline-flex;gap:8px;align-items:center}
+.btn.primary{background:var(--magenta);color:#fff;border-color:transparent}
+.btn:focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
+.hint{position:absolute;z-index:2;right:max(20px,env(safe-area-inset-right,0px));bottom:clamp(28px,7vh,72px);font:600 11px/1 var(--f-mono);letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+.scroll{position:absolute;z-index:2;left:50%;bottom:14px;transform:translateX(-50%);font:600 10px/1 var(--f-mono);letter-spacing:.2em;color:var(--muted)}
+@media (max-width:760px){
+  .hero{height:min(100svh,820px);min-height:560px}
+  #poster{top:9%;height:52%;object-position:50% 0}
+  .hero-copy{max-width:none;right:max(20px,env(safe-area-inset-right,0px));bottom:52px}
+  h1{font-size:clamp(28px,8.4vw,40px)}
+  .lede{font-size:14px}
+  .hint{display:none}
+}
+
+/* ---------- sections ---------- */
+section{padding-block:clamp(64px,10vw,120px)}
+.sec-head{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-bottom:clamp(28px,4vw,48px);max-width:720px}
+.sec-head h2{font-family:var(--f-display);font-weight:400;font-size:clamp(26px,3.4vw,40px);line-height:1.25;margin:0;text-wrap:balance}
+.sec-head p{margin:0;color:var(--muted)}
+.label{font:600 12px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--cyan)}
+
+.intro{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(16px,2.4vw,28px)}
+.intro div{border-top:2px solid var(--ink);padding-top:14px}
+.intro h3{margin:0 0 6px;font-size:17px}
+.intro p{margin:0;color:var(--muted);font-size:15px}
+
+/* build log */
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:0;border-top:1px solid var(--line)}
+.step{display:grid;grid-template-columns:96px minmax(0,1fr) minmax(0,300px);gap:clamp(16px,3vw,40px);padding-block:clamp(24px,3.4vw,40px);border-bottom:1px solid var(--line)}
+.step .no{font:400 44px/1 var(--f-display);color:transparent;-webkit-text-stroke:1.2px var(--ink)}
+.step h3{margin:0 0 8px;font-size:clamp(18px,2vw,21px);line-height:1.45}
+.step p{margin:0 0 10px}
+.step ul{margin:0;padding-left:1.1em;color:var(--muted);font-size:15px}
+.step li{margin:.2em 0}
+.facts{font:400 12.5px/1.7 var(--f-mono);font-variant-numeric:tabular-nums;color:var(--muted);align-self:start;
+  border-left:3px solid var(--yellow);padding:4px 0 4px 14px}
+.facts b{display:block;color:var(--ink);font-weight:600;margin-bottom:2px}
+.tag{display:inline-block;font:600 11px/1 var(--f-mono);letter-spacing:.06em;padding:5px 8px;border-radius:6px;background:var(--paper-2);color:var(--ink);margin:2px 4px 2px 0}
+
+/* checklist */
+.checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:clamp(14px,2vw,22px)}
+.check{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;display:grid;grid-template-columns:28px minmax(0,1fr);gap:12px}
+.check .ok{width:24px;height:24px;border-radius:50%;background:var(--cyan);color:#fff;display:grid;place-items:center;font:700 13px/1 var(--f-mono);margin-top:3px}
+.check h3{margin:0 0 4px;font-size:16px}
+.check p{margin:0;color:var(--muted);font-size:14.5px}
+
+/* costume difficulty */
+.tiers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(14px,2vw,22px)}
+.tier{border-radius:14px;padding:20px;border:1px solid var(--line);background:var(--card)}
+.tier h3{margin:0 0 4px;font-size:17px;display:flex;align-items:center;gap:8px}
+.tier .dot{width:10px;height:10px;border-radius:50%}
+.tier p{margin:0 0 10px;color:var(--muted);font-size:14.5px}
+
+/* lessons */
+.lessons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 clamp(24px,4vw,56px)}
+.lesson{padding-block:18px;border-bottom:1px solid var(--line)}
+.lesson h3{margin:0 0 4px;font-size:16px}
+.lesson p{margin:0;font-size:14.5px;color:var(--muted)}
+.lesson .fix{color:var(--ink)}
+.lesson .fix::before{content:"→ ";color:var(--magenta);font-weight:700}
+
+/* code */
+.code-wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(20px,3vw,40px);align-items:start}
+pre{margin:0;overflow-x:auto;background:#1c1a22;color:#ece8f2;border-radius:14px;padding:20px 22px;font:400 13px/1.7 var(--f-mono)}
+pre .c{color:#8f88a0}pre .k{color:#ff8ec4}pre .s{color:#7fe3ee}
+.notes p{margin:0 0 12px}
+.notes ul{margin:0;padding-left:1.1em;color:var(--muted)}
+
+/* demos */
+.demos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(14px,2vw,22px)}
+.demo{display:block;text-decoration:none;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;transition:transform .2s ease,border-color .2s ease}
+.demo:hover{transform:translateY(-2px);border-color:var(--cyan)}
+.demo:focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
+.demo .k{font:600 11px/1 var(--f-mono);letter-spacing:.12em;color:var(--magenta);text-transform:uppercase}
+.demo h3{margin:8px 0 4px;font-size:17px}
+.demo p{margin:0;color:var(--muted);font-size:14px}
+
+/* poster render mode (?poster) — transparent figure only */
+.pm,.pm body{background:transparent!important}
+.pm .hero{background:none}.pm .hero::after,.pm .hero-copy,.pm .hero-ui,.pm .hint,.pm .scroll,.pm #poster,.pm main,.pm footer{display:none!important}
+.pm #stage{opacity:1}
+footer{padding-block:40px calc(40px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);color:var(--muted);font-size:13px}
+
+@media (max-width:860px){
+  .intro,.tiers,.demos{grid-template-columns:minmax(0,1fr)}
+  .checks,.lessons,.code-wrap{grid-template-columns:minmax(0,1fr)}
+  .step{grid-template-columns:56px minmax(0,1fr)}
+  .step .facts{grid-column:2}
+  .step .no{font-size:32px}
+}
+</style>
+</head>
+<body>
+
+<header class="hero" id="hero">
+  <img id="poster" src="poster.webp" alt="ショートパンツと虹色ソックスのキャラクターの3Dフィギュア" width="539" height="837">
+  <canvas id="stage" aria-label="傾きやカーソルで視点が動く3Dフィギュア"></canvas>
+  <div class="hero-copy">
+    <div class="eyebrow">Live 3D figure</div>
+    <h1><span>傾けると、</span><br><span><em>覗ける</em>フィギュア。</span></h1>
+    <p class="lede">AIで描いたキャラクターを3D化し、骨を入れて踊らせ、スマホの傾きやカーソルで覗き込めるようにするまでの手順をまとめました。</p>
+  </div>
+  <div class="hero-ui">
+    <div class="spec" id="spec"><b>DANCE</b> · 102,576 polys · 4.9 MB</div>
+    <button class="btn primary" id="gyroBtn" type="button" hidden>傾けて見る</button>
+    <button class="btn" id="motionBtn" type="button" hidden>止める</button>
+  </div>
+  <div class="hint" id="hint">Move your cursor</div>
+  <div class="scroll" aria-hidden="true">SCROLL</div>
+</header>
+
+<main>
+  <section class="wrap" id="about">
+    <div class="sec-head">
+      <span class="label">About</span>
+      <h2>画面の中に、置き物がある感覚</h2>
+      <p>上のフィギュアは画像ではなく、ブラウザで動いている3Dモデルです。作るのに必要なのは、キャラクターの絵と、いくつかの生成サービスと、少しのプログラムだけです。</p>
+    </div>
+    <div class="intro">
+      <div><h3>スマホはジャイロ</h3><p>本体を傾けた方向から覗き込めます。iPhoneは最初に「傾けて見る」をタップして許可します。</p></div>
+      <div><h3>PCはカーソル</h3><p>カーソルの位置に合わせて、正面から左右・上下に視点が回り込みます。</p></div>
+      <div><h3>重い端末は静止</h3><p>描画が遅い端末や「視差効果を減らす」設定では、ダンスを止めた静止フィギュアに切り替わります。</p></div>
+    </div>
+  </section>
+
+  <section class="wrap" id="steps">
+    <div class="sec-head">
+      <span class="label">Build log</span>
+      <h2>作り方：9つの工程</h2>
+      <p>実際にこのフィギュアを作った順番です。数字はこのモデルでの実測値です。</p>
+    </div>
+    <ol class="steps">
+      <li class="step"><span class="no">01</span>
+        <div><h3>キャラクターの元絵を作る</h3>
+          <p>Midjourneyで雰囲気の良いベースキャラクターを作ります。この段階では細かい制御より、顔立ちと服のデザインを決めることが目的です。</p>
+          <ul><li>服は体に沿うもの（トップス、ショートパンツ）が3D化・踊らせ方ともに安定します</li><li>柄や配色はテクスチャなので自由に入れられます</li></ul></div>
+        <div class="facts"><b>使ったもの</b>Midjourney</div></li>
+      <li class="step"><span class="no">02</span>
+        <div><h3>3D化用のキャラシートを作る</h3>
+          <p>元絵をもとに、GPT系の画像生成で正面・左右・背面・真上・顔アップをそろえます。仕上がりを一番左右するのがこの工程です。</p>
+          <ul><li>Aポーズで腕を45°ほど開き、手を体や服から離す</li><li>遠近感のない正投影、影のないフラットな照明、台座なし</li></ul></div>
+        <div class="facts"><b>枚数</b>6枚（うち4枚を3D化に使用）</div></li>
+      <li class="step"><span class="no">03</span>
+        <div><h3>複数のサービスで3D化して比べる</h3>
+          <p>同じキャラシートをTripoとHunyuan3Dに入れて比較しました。Tripoは左右で違うソックスや髪色まで忠実で、Hunyuan3Dは柄と髪色が変わりました。</p>
+          <ul><li>どのサービスが合うかはキャラ次第なので、2社以上で試すのが確実です</li></ul></div>
+        <div class="facts"><b>費用（Higgsfield経由）</b>Tripo H3.1 複数視点 18cr<br>Hunyuan3D v3 19cr<br><b style="margin-top:8px">出力</b>約100万面 · 4Kテクスチャ · 67MB</div></li>
+      <li class="step"><span class="no">04</span>
+        <div><h3>向きを直して軽くする</h3>
+          <p>横向きに出力されたモデルを正面に回転し、身長1.55mにそろえて、面数とテクスチャを減らします。骨入れサービスは大きすぎるデータを受け付けませんでした。</p>
+          <ul><li>32万面では骨入れが失敗し、10万面で成功</li></ul></div>
+        <div class="facts"><b>軽量化</b>100万面 → 10万面<br>67MB → 7MB<br>テクスチャ 4096 → 2048px</div></li>
+      <li class="step"><span class="no">05</span>
+        <div><h3>骨とダンスを入れる</h3>
+          <p>Meshyの自動リギングで人型の骨（24本）を埋め込み、用意された約680種類の動きからダンスを選びます。</p>
+          <ul><li>今回は All_Night_Dance（約8秒のループ）</li></ul></div>
+        <div class="facts"><b>費用</b>骨入れ＋ダンス 8cr</div></li>
+      <li class="step"><span class="no">06</span>
+        <div><h3>骨の割り当てを直す</h3>
+          <p>自動リギングは、手のそばにある服まで手の骨に付けてしまいます。メッシュのつながりと面の向きから「腕」と「体」を分け直し、脇の下だけはなめらかに伸びるように割り当て直しました。</p>
+          <ul><li>スカートのキャラでは、裾に8本の補助の骨を足して太ももに合わせて持ち上げました</li></ul></div>
+        <div class="facts"><b>処理</b>Python（numpy / scipy）でglTFを直接書き換え</div></li>
+      <li class="step"><span class="no">07</span>
+        <div><h3>ビューアを作る</h3>
+          <p>three.jsで描画し、スマホは傾きセンサー、PCはカーソル位置をカメラの向きにつなぎます。揺れは補間してなめらかにしています。</p>
+          <ul><li>iPhoneのセンサーはHTTPSとタップでの許可が必須</li><li>画面外に出たら描画を止めて電池を節約</li></ul></div>
+        <div class="facts"><b>使ったもの</b>three.js r147 · GLTFLoader</div></li>
+      <li class="step"><span class="no">08</span>
+        <div><h3>色を合わせる</h3>
+          <p>生成されたテクスチャの鮮やかさはキャラシートと同じでしたが、照明が強すぎて白っぽく見えていました。金属感をゼロにし、環境光と露出を下げ、彩度を少し補正しています。</p></div>
+        <div class="facts"><b>設定</b>metalness 0 · 環境光 0.55<br>露出 0.8 · 彩度 +25%</div></li>
+      <li class="step"><span class="no">09</span>
+        <div><h3>公開する</h3>
+          <p>GitHub Pagesで公開しています。傾きセンサーはHTTPSのページでしか動かないので、ファイルを置くだけでHTTPSになる無料の配信先が向いています。</p>
+          <ul><li>3Dモデルは圧縮して約4.9MB</li></ul></div>
+        <div class="facts"><b>配信</b>GitHub Pages</div></li>
+    </ol>
+  </section>
+
+  <section class="wrap" id="sheet">
+    <div class="sec-head">
+      <span class="label">Checklist</span>
+      <h2>キャラシートで押さえること</h2>
+      <p>3D化と骨入れの破綻の多くは、キャラシートの段階で防げます。</p>
+    </div>
+    <div class="checks">
+      <div class="check"><span class="ok">1</span><div><h3>腕と体のあいだにすき間</h3><p>腕を45°ほど開き、手を太ももや服から離します。くっついていると、手と服が一緒に動いて破れます。</p></div></div>
+      <div class="check"><span class="ok">2</span><div><h3>台座なし・足裏は平ら</h3><p>台座が一体になると、踊らせたときに一緒に変形します。</p></div></div>
+      <div class="check"><span class="ok">3</span><div><h3>正投影・同じ縮尺</h3><p>見上げや見下ろしにせず、全視点で頭と足の高さをそろえます。</p></div></div>
+      <div class="check"><span class="ok">4</span><div><h3>影のないフラットな照明</h3><p>強い陰影は模様としてテクスチャに焼き付きます。光沢は後から設定で付けます。</p></div></div>
+      <div class="check"><span class="ok">5</span><div><h3>左右の違いを全視点で一致</h3><p>左右で違うソックスなどは、「キャラ本人から見て右」を基準に統一します。</p></div></div>
+      <div class="check"><span class="ok">6</span><div><h3>細い部品と文字は後付け</h3><p>チェーンや細いベルトは崩れ、文字ロゴは読めなくなります。別に作って後から付けます。</p></div></div>
+    </div>
+  </section>
+
+  <section class="wrap" id="costume">
+    <div class="sec-head">
+      <span class="label">Costume</span>
+      <h2>動かしやすい服、難しい服</h2>
+      <p>表現を単調にしないコツは、形ではなく柄で見せることと、揺れる大きな形を1〜2か所に絞ることです。</p>
+    </div>
+    <div class="tiers">
+      <div class="tier"><h3><span class="dot" style="background:var(--cyan)"></span>描きやすい</h3><p>1本の骨にきれいに付いて動きます。</p>
+        <span class="tag">タンクトップ</span><span class="tag">Tシャツ</span><span class="tag">体に沿うニット</span><span class="tag">ショートパンツ</span><span class="tag">パンツ</span><span class="tag">レギンス</span></div>
+      <div class="tier"><h3><span class="dot" style="background:var(--yellow)"></span>工夫すれば可能</h3><p>補助の骨を足して動かします。</p>
+        <span class="tag">フレアスカート</span><span class="tag">プリーツスカート</span><span class="tag">ツインテール</span><span class="tag">短いケープ</span></div>
+      <div class="tier"><h3><span class="dot" style="background:var(--magenta)"></span>難しい</h3><p>重なりと揺れの両方があり、体と服を別々に作る必要があります。</p>
+        <span class="tag">ジャケットの重ね着</span><span class="tag">ロングコート</span><span class="tag">長い髪</span><span class="tag">大きな袖</span><span class="tag">なびくリボン</span></div>
+    </div>
+  </section>
+
+  <section class="wrap" id="lessons">
+    <div class="sec-head">
+      <span class="label">Lessons</span>
+      <h2>つまずいたことと直し方</h2>
+    </div>
+    <div class="lessons">
+      <div class="lesson"><h3>手を動かすと筋が伸びる</h3><p>Aポーズで手が太ももの横にあり、手の頂点が腰や脚の骨にも付いていました。</p><p class="fix">腕と体を分け直して、手は腕の骨だけに付ける</p></div>
+      <div class="lesson"><h3>スカートが手に引っ張られる</h3><p>生成時に手とスカートがくっつき、スカートの一部が手の骨に付いていました。</p><p class="fix">テクスチャの色も使って分類し、くっついた面を切り離す</p></div>
+      <div class="lesson"><h3>スカートに縦のスリット</h3><p>穴ではなく、手が押し当てられてスカートが内側にへこんでいた部分でした。</p><p class="fix">へこみを周囲の丸みに合わせて外へ押し戻す</p></div>
+      <div class="lesson"><h3>腕を上げると脇が空洞に</h3><p>腕と脇腹をきっぱり分けたため、脇腹の面まで腕と一緒に持っていかれました。</p><p class="fix">脇の下だけは腕と体の両方に付けて伸ばす</p></div>
+      <div class="lesson"><h3>正面の画像が審査で弾かれる</h3><p>生成サービスの自動チェックで、露出の多い正面画像が不適切と判定されることがあります。</p><p class="fix">露出を控えめにした設定にするか、別のサービスを使う</p></div>
+      <div class="lesson"><h3>色が白っぽく見える</h3><p>テクスチャではなく、ビューアの照明と金属感の設定が原因でした。</p><p class="fix">金属感ゼロ、環境光と露出を下げ、彩度を補正</p></div>
+      <div class="lesson"><h3>GitHub Pagesの公開が止まる</h3><p>配信の順番待ちで失敗し、再実行も割り当てられないまま固まりました。</p><p class="fix">再実行ではなく、空のコミットで最初からやり直す</p></div>
+      <div class="lesson"><h3>骨入れサービスが失敗する</h3><p>約32万面のデータでは失敗しました。理由は表示されません。</p><p class="fix">10万面程度まで減らしてから送る</p></div>
+    </div>
+  </section>
+
+  <section class="wrap" id="code">
+    <div class="sec-head">
+      <span class="label">Code</span>
+      <h2>傾きとカーソルをカメラにつなぐ</h2>
+      <p>このページのファーストビューで使っている考え方です。視点は正面から左右35°・上下25°の範囲に絞っています。</p>
+    </div>
+    <div class="code-wrap">
+<pre><span class="c">// 傾き（スマホ）：最初の姿勢からの差だけを使う</span>
+<span class="k">addEventListener</span>(<span class="s">"deviceorientation"</span>, e =&gt; {
+  <span class="k">if</span> (base == <span class="k">null</span>) base = { b: e.beta, g: e.gamma };
+  target.yaw   = clamp((e.gamma - base.g) * 1.2, -35, 35);
+  target.pitch = clamp((e.beta  - base.b) * 0.9, -10, 25);
+});
+
+<span class="c">// カーソル（PC）：画面中央からのずれを角度に</span>
+<span class="k">addEventListener</span>(<span class="s">"pointermove"</span>, e =&gt; {
+  target.yaw   = (e.clientX / innerWidth  - 0.5) * 70;
+  target.pitch = (e.clientY / innerHeight - 0.5) * 30;
+});
+
+<span class="c">// 毎フレーム、少しずつ近づけてなめらかに</span>
+view.yaw   += (target.yaw   - view.yaw)   * 0.08;
+view.pitch += (target.pitch - view.pitch) * 0.08;</pre>
+      <div class="notes">
+        <p>傾きの基準は、ゆっくり今の姿勢に追従させています。寝転んで見ても、机に置いて見ても、自然な角度が「正面」になります。</p>
+        <ul>
+          <li>iPhoneは <code>DeviceOrientationEvent.requestPermission()</code> をタップの中で呼ぶ必要があります</li>
+          <li>指の操作はページのスクロールに譲り、3D側では受け取りません</li>
+          <li>最初は静止画を表示し、3Dの準備ができたら切り替えます</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap" id="demos">
+    <div class="sec-head">
+      <span class="label">Demos</span>
+      <h2>ビューア単体で見る</h2>
+      <p>360°・真上まで自由に覗けるビューアです。スマホでは「ジャイロで見る」をタップしてください。</p>
+    </div>
+    <div class="demos">
+      <a class="demo" href="../dance2/"><span class="k">Dance · 02</span><h3>ショートパンツのキャラ</h3><p>このページと同じモデル。Tripoで3D化し、骨の割り当てを修正したもの。</p></a>
+      <a class="demo" href="../dance/"><span class="k">Dance · 01</span><h3>スカートのキャラ</h3><p>裾に補助の骨を8本足し、太ももに合わせてスカートが持ち上がります。</p></a>
+      <a class="demo" href="../"><span class="k">Static</span><h3>最初の試作</h3><p>4枚の画像から作った、動かない置き物のフィギュア。</p></a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">キャラクターと3Dモデルは生成AIで作成したものです。商用で使う場合は、各生成サービスの利用規約を確認してください。</div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/environments/RoomEnvironment.js"></script>
+<script>
+(() => {
+const MODEL_URL = "../dance2/model.glb";
+const $ = id => document.getElementById(id);
+const hero = $("hero"), canvas = $("stage");
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const coarse = matchMedia("(pointer: coarse)").matches;
+const POSTER = new URLSearchParams(location.search).has("poster");   // used once to render poster.webp
+if (POSTER) document.documentElement.classList.add("pm");
+if (typeof THREE === "undefined") return;                            // keep the poster if the library fails
+
+/* ---------- renderer ---------- */
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, coarse ? 1.75 : 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.8;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new THREE.RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(26, 1, 0.01, 50);
+const key = new THREE.DirectionalLight(0xffffff, 1.5);
+key.position.set(1.6, 3.2, 2.6); key.castShadow = true; key.shadow.mapSize.set(1024, 1024); key.shadow.bias = -0.0006;
+Object.assign(key.shadow.camera, { left: -1, right: 1, top: 1.6, bottom: -0.4 });
+scene.add(key, new THREE.HemisphereLight(0xffffff, 0x554466, 0.35));
+const floor = new THREE.Mesh(new THREE.CircleGeometry(2.4, 48), new THREE.ShadowMaterial({ opacity: 0.22 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+const holder = new THREE.Group(); scene.add(holder);
+
+/* ---------- framing: figure sits right of the copy on wide screens, centred above it on phones ---------- */
+const target = new THREE.Vector3(); let radius = 4, wide = true;
+function resize(){
+  const w = hero.clientWidth, h = hero.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; wide = w > 760;
+  const vf = THREE.MathUtils.degToRad(camera.fov), t = Math.tan(vf / 2);
+  const fitH = (wide ? 1.22 : 1.5) / (2 * t), fitW = 0.95 / (2 * t * camera.aspect);
+  radius = Math.max(fitH, fitW);
+  camera.updateProjectionMatrix();
+  // shift the view so the figure lands on the right third (wide) or upper half (phone)
+  if (POSTER) camera.clearViewOffset();
+  else if (wide) camera.setViewOffset(w, h, -w * 0.17, 0, w, h);
+  else camera.setViewOffset(w, h, 0, h * 0.12, w, h);
+  camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize); resize();
+
+/* ---------- material colour tuning (see build log step 08) ---------- */
+function tuneMaterial(mat){
+  if (!mat) return;
+  mat.metalness = 0; mat.envMapIntensity = 0.55;
+  const mp = mat.map;
+  if (mp && mp.image){
+    try{
+      const c = document.createElement("canvas"); c.width = mp.image.width; c.height = mp.image.height;
+      const x = c.getContext("2d"); x.filter = "saturate(1.25) contrast(1.05)"; x.drawImage(mp.image, 0, 0);
+      const t = new THREE.CanvasTexture(c); t.flipY = mp.flipY; t.encoding = mp.encoding; t.wrapS = mp.wrapS; t.wrapT = mp.wrapT; t.anisotropy = 4;
+      mat.map = t;
+    }catch(e){}
+  }
+  mat.needsUpdate = true;
+}
+function posedBox(root){
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3(), v = new THREE.Vector3();
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.attributes.position, step = Math.max(1, Math.floor(pos.count / 4000));
+    if (o.isSkinnedMesh) o.skeleton.update();
+    for (let i = 0; i < pos.count; i += step){
+      v.fromBufferAttribute(pos, i);
+      if (o.isSkinnedMesh) o.boneTransform(i, v);
+      v.applyMatrix4(o.matrixWorld); box.expandByPoint(v);
+    }
+  });
+  return box;
+}
+
+/* ---------- load ---------- */
+let mixer = null, action = null, dancing = !reduceMotion && !POSTER;
+const clock = new THREE.Clock();
+function startLoad(){
+  new THREE.GLTFLoader().load(MODEL_URL, gltf => {
+    const m = gltf.scene;
+    m.traverse(o => { if (o.isMesh){ o.castShadow = true; o.frustumCulled = false; tuneMaterial(o.material); } });
+    if (gltf.animations.length){
+      mixer = new THREE.AnimationMixer(m);
+      const clip = gltf.animations.reduce((a, b) => b.duration > a.duration ? b : a);
+      clip.tracks.forEach(t => {                       // dance in place
+        if (!/\.position$/.test(t.name) || !/hip|root|pelvis/i.test(t.name)) return;
+        const v = t.values, x0 = v[0], z0 = v[2];
+        for (let i = 0; i < v.length; i += 3){ v[i] = x0; v[i + 2] = z0; }
+      });
+      action = mixer.clipAction(clip); action.play();
+      mixer.setTime(POSTER ? 0 : 0.0);
+    }
+    const s = 1 / posedBox(m).getSize(new THREE.Vector3()).y; m.scale.multiplyScalar(s);
+    const b = posedBox(m), c = b.getCenter(new THREE.Vector3());
+    m.position.set(-c.x, -b.min.y, -c.z);
+    holder.add(m);
+    target.set(0, 0.52, 0);
+    $("motionBtn").hidden = !mixer || POSTER;
+    setDancing(dancing);
+    requestAnimationFrame(() => hero.classList.add("live"));
+    measureStart = performance.now(); frames = 0;
+  }, undefined, () => { /* keep the poster */ });
+}
+// let the poster paint first, then fetch the 3D model
+if (document.readyState === "complete") setTimeout(startLoad, 150); else addEventListener("load", () => setTimeout(startLoad, 150));
+
+/* ---------- dance / still ---------- */
+function setDancing(on){
+  dancing = on && !!mixer;
+  $("motionBtn").textContent = dancing ? "止める" : "踊らせる";
+  if (mixer && !dancing){ mixer.setTime(0); }   // same pose as the poster
+}
+$("motionBtn").addEventListener("click", () => { userChose = true; setDancing(!dancing); });
+let userChose = false, measureStart = 0, frames = 0, lite = false;
+
+/* ---------- view control ---------- */
+const view = { yaw: 0, pitch: 6 }, goal = { yaw: 0, pitch: 6 };
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+addEventListener("pointermove", e => {
+  if (e.pointerType !== "mouse") return;
+  goal.yaw = (e.clientX / innerWidth - 0.5) * 70;
+  goal.pitch = 6 + (e.clientY / innerHeight - 0.5) * 30;
+}, { passive: true });
+document.addEventListener("mouseleave", () => { goal.yaw = 0; goal.pitch = 6; });
+
+let base = null, gyroOn = false;
+function onOrient(e){
+  if (e.beta == null) return;
+  if (!gyroOn){ gyroOn = true; $("gyroBtn").hidden = true; $("hint").textContent = "Tilt your phone"; }
+  // portrait vs landscape: swap axes so "tilt sideways" always turns the figure
+  const ang = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+  let lr = e.gamma, fb = e.beta;
+  if (ang === 90){ lr = e.beta; fb = -e.gamma; } else if (ang === -90 || ang === 270){ lr = -e.beta; fb = e.gamma; }
+  if (!base) base = { lr, fb };
+  base.lr += (lr - base.lr) * 0.004; base.fb += (fb - base.fb) * 0.004;   // drift the neutral pose slowly
+  goal.yaw = clamp((lr - base.lr) * 1.2, -35, 35);
+  goal.pitch = clamp(6 + (fb - base.fb) * 0.9, -10, 25);
+}
+if (coarse && typeof DeviceOrientationEvent !== "undefined"){
+  if (typeof DeviceOrientationEvent.requestPermission === "function"){
+    $("gyroBtn").hidden = POSTER;      // iOS: needs a tap
+    $("hint").textContent = "Tap to tilt";
+    $("gyroBtn").addEventListener("click", async () => {
+      try{ if (await DeviceOrientationEvent.requestPermission() === "granted") addEventListener("deviceorientation", onOrient); }
+      catch(e){}
+      $("gyroBtn").hidden = true;
+    });
+  } else addEventListener("deviceorientation", onOrient);
+}
+if (!coarse) $("hint").textContent = "Move your cursor";
+window.__orient = onOrient;                         // used by the automated check
+window.__view = goal;
+
+/* ---------- loop: pause when the hero is off screen ---------- */
+let visible = true;
+new IntersectionObserver(es => { visible = es[0].isIntersecting; if (visible) requestAnimationFrame(tick); }, { threshold: 0.02 }).observe(hero);
+const dirV = new THREE.Vector3(), eul = new THREE.Euler();
+function tick(){
+  if (!visible) return;
+  const dt = Math.min(clock.getDelta(), 0.1);
+  if (mixer && dancing) mixer.update(dt);
+  const k = reduceMotion ? 1 : 0.08;
+  view.yaw += (goal.yaw - view.yaw) * k; view.pitch += (goal.pitch - view.pitch) * k;
+  eul.set(-THREE.MathUtils.degToRad(view.pitch), THREE.MathUtils.degToRad(view.yaw), 0, "YXZ");
+  camera.quaternion.setFromEuler(eul);
+  dirV.set(0, 0, -1).applyQuaternion(camera.quaternion);
+  camera.position.copy(target).addScaledVector(dirV, -radius);
+  renderer.render(scene, camera);
+  // adaptive quality: if the first ~2 s of dancing run under 24 fps, switch to the still figure
+  if (mixer && dancing && !lite && !userChose && measureStart){
+    frames++;
+    const el = performance.now() - measureStart;
+    if (el > 2200){
+      const fps = frames * 1000 / el; measureStart = 0;
+      if (fps < 24){ lite = true; setDancing(false); $("spec").innerHTML = "<b>STILL</b> · 軽量モード（" + Math.round(fps) + " fps）"; }
+    }
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
