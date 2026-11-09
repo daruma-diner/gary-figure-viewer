@@ -154,17 +154,17 @@ footer{padding-block:40px calc(40px + env(safe-area-inset-bottom,0px));border-to
 <body>
 
 <header class="hero" id="hero">
-  <img id="poster" src="poster.webp" alt="ショートパンツと虹色ソックスのキャラクターの3Dフィギュア" width="539" height="837">
+  <img id="poster" src="poster.webp" alt="黒いジャケットとミニスカートのキャラクター「GARY」の3Dフィギュア" width="561" height="873">
   <canvas id="stage" aria-label="傾きやカーソルで視点が動く3Dフィギュア"></canvas>
   <div class="hero-copy">
     <div class="eyebrow">Live 3D figure</div>
     <h1><span>傾けると、</span><br><span><em>覗ける</em>フィギュア。</span></h1>
-    <p class="lede">AIで描いたキャラクターを3D化し、骨を入れて踊らせ、スマホの傾きやカーソルで覗き込めるようにするまでの手順をまとめました。</p>
+    <p class="lede">スマホを向けた方向から、PCはカーソルで、360°どこからでも覗き込めます。AIで描いたキャラクターを3Dフィギュアにするまでの手順をまとめました。</p>
   </div>
   <div class="hero-ui">
-    <div class="spec" id="spec"><b>DANCE</b> · 102,576 polys · 4.9 MB</div>
+    <div class="spec" id="spec"><b>GARY</b> · 155,823 polys · 6.5 MB</div>
     <button class="btn primary" id="gyroBtn" type="button" hidden>傾けて見る</button>
-    <button class="btn" id="motionBtn" type="button" hidden>止める</button>
+    <button class="btn" id="centerBtn" type="button" hidden>正面に戻す</button>
   </div>
   <div class="hint" id="hint">Move your cursor</div>
   <div class="scroll" aria-hidden="true">SCROLL</div>
@@ -178,9 +178,9 @@ footer{padding-block:40px calc(40px + env(safe-area-inset-bottom,0px));border-to
       <p>上のフィギュアは画像ではなく、ブラウザで動いている3Dモデルです。作るのに必要なのは、キャラクターの絵と、いくつかの生成サービスと、少しのプログラムだけです。</p>
     </div>
     <div class="intro">
-      <div><h3>スマホはジャイロ</h3><p>本体を傾けた方向から覗き込めます。iPhoneは最初に「傾けて見る」をタップして許可します。</p></div>
-      <div><h3>PCはカーソル</h3><p>カーソルの位置に合わせて、正面から左右・上下に視点が回り込みます。</p></div>
-      <div><h3>重い端末は静止</h3><p>描画が遅い端末や「視差効果を減らす」設定では、ダンスを止めた静止フィギュアに切り替わります。</p></div>
+      <div><h3>スマホは本体の向き</h3><p>立てると正面、真下に向けると頭上、右に回すと右側面。iPhoneは最初に「傾けて見る」をタップして許可します。</p></div>
+      <div><h3>PCはカーソル</h3><p>左右に動かすと水平に一周、上下に動かすと頭上から背中、足元まで縦に一周します。</p></div>
+      <div><h3>360°の置き物</h3><p>ファーストビューは、4枚の画像から作った最初の試作「GARY」です。動かない分、軽く、どの角度からも破綻しません。</p></div>
     </div>
   </section>
 
@@ -291,30 +291,32 @@ footer{padding-block:40px calc(40px + env(safe-area-inset-bottom,0px));border-to
     <div class="sec-head">
       <span class="label">Code</span>
       <h2>傾きとカーソルをカメラにつなぐ</h2>
-      <p>このページのファーストビューで使っている考え方です。視点は正面から左右35°・上下25°の範囲に絞っています。</p>
+      <p>このページのファーストビューで使っている考え方です。視点の範囲は絞らず、スマホの向きをそのままカメラの向きにしています。</p>
     </div>
     <div class="code-wrap">
-<pre><span class="c">// 傾き（スマホ）：最初の姿勢からの差だけを使う</span>
+<pre><span class="c">// スマホ：本体の向き（クォータニオン）をそのままカメラに</span>
 <span class="k">addEventListener</span>(<span class="s">"deviceorientation"</span>, e =&gt; {
-  <span class="k">if</span> (base == <span class="k">null</span>) base = { b: e.beta, g: e.gamma };
-  target.yaw   = clamp((e.gamma - base.g) * 1.2, -35, 35);
-  target.pitch = clamp((e.beta  - base.b) * 0.9, -10, 25);
+  euler.set(rad(e.beta), rad(e.alpha), -rad(e.gamma), <span class="s">"YXZ"</span>);
+  device.setFromEuler(euler).multiply(toCamera);   <span class="c">// 画面の奥＝視線</span>
+  device.multiply(screenTurn);                     <span class="c">// 縦横の持ち替え</span>
+  goal.copy(heading).multiply(device);             <span class="c">// 最初の向きを正面に</span>
 });
 
-<span class="c">// カーソル（PC）：画面中央からのずれを角度に</span>
+<span class="c">// PC：カーソルの位置を水平・垂直の角度に（それぞれ一周）</span>
 <span class="k">addEventListener</span>(<span class="s">"pointermove"</span>, e =&gt; {
-  target.yaw   = (e.clientX / innerWidth  - 0.5) * 70;
-  target.pitch = (e.clientY / innerHeight - 0.5) * 30;
+  yaw   = (x / width  - 0.5) * 360;
+  pitch = (0.5 - y / height) * 360;
+  goal.setFromEuler(euler.set(-rad(pitch), rad(yaw), 0, <span class="s">"YXZ"</span>));
 });
 
-<span class="c">// 毎フレーム、少しずつ近づけてなめらかに</span>
-view.yaw   += (target.yaw   - view.yaw)   * 0.08;
-view.pitch += (target.pitch - view.pitch) * 0.08;</pre>
+<span class="c">// 毎フレーム、球面補間でなめらかに追従</span>
+view.slerp(goal, 0.12);
+camera.position.copy(center).addScaledVector(forward(view), -distance);</pre>
       <div class="notes">
-        <p>傾きの基準は、ゆっくり今の姿勢に追従させています。寝転んで見ても、机に置いて見ても、自然な角度が「正面」になります。</p>
+        <p>角度を足し算せず、クォータニオン（回転を4つの数で表す方法）で扱うのがポイントです。真上を越えて背中側へ回り込んでも、視点が跳ねたりひっくり返ったりしません。</p>
         <ul>
           <li>iPhoneは <code>DeviceOrientationEvent.requestPermission()</code> をタップの中で呼ぶ必要があります</li>
-          <li>指の操作はページのスクロールに譲り、3D側では受け取りません</li>
+          <li>最初に構えた向きを正面とし、「正面に戻す」でいつでも合わせ直せます</li><li>指の操作はページのスクロールに譲り、3D側では受け取りません</li>
           <li>最初は静止画を表示し、3Dの準備ができたら切り替えます</li>
         </ul>
       </div>
@@ -344,21 +346,21 @@ view.pitch += (target.pitch - view.pitch) * 0.08;</pre>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/environments/RoomEnvironment.js"></script>
 <script>
 (() => {
-const MODEL_URL = "../dance2/model.glb";
+const MODEL_URL = "../model.glb";                     // GARY: static figure
 const $ = id => document.getElementById(id);
 const hero = $("hero"), canvas = $("stage");
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const coarse = matchMedia("(pointer: coarse)").matches;
-const POSTER = new URLSearchParams(location.search).has("poster");   // used once to render poster.webp
+const POSTER = new URLSearchParams(location.search).has("poster");
 if (POSTER) document.documentElement.classList.add("pm");
-if (typeof THREE === "undefined") return;                            // keep the poster if the library fails
+if (typeof THREE === "undefined") return;
 
 /* ---------- renderer ---------- */
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, coarse ? 1.75 : 2));
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.8;
+renderer.toneMappingExposure = 0.9;
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new THREE.RoomEnvironment(), 0.04).texture;
@@ -366,21 +368,18 @@ const camera = new THREE.PerspectiveCamera(26, 1, 0.01, 50);
 const key = new THREE.DirectionalLight(0xffffff, 1.5);
 key.position.set(1.6, 3.2, 2.6); key.castShadow = true; key.shadow.mapSize.set(1024, 1024); key.shadow.bias = -0.0006;
 Object.assign(key.shadow.camera, { left: -1, right: 1, top: 1.6, bottom: -0.4 });
-scene.add(key, new THREE.HemisphereLight(0xffffff, 0x554466, 0.35));
+scene.add(key, new THREE.HemisphereLight(0xffffff, 0x554466, 0.4));
 const floor = new THREE.Mesh(new THREE.CircleGeometry(2.4, 48), new THREE.ShadowMaterial({ opacity: 0.22 }));
 floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
 const holder = new THREE.Group(); scene.add(holder);
 
-/* ---------- framing: figure sits right of the copy on wide screens, centred above it on phones ---------- */
-const target = new THREE.Vector3(); let radius = 4, wide = true;
+/* ---------- framing ---------- */
+const center = new THREE.Vector3(0, 0.5, 0); let radius = 4;
 function resize(){
-  const w = hero.clientWidth, h = hero.clientHeight;
-  renderer.setSize(w, h, false); camera.aspect = w / h; wide = w > 760;
-  const vf = THREE.MathUtils.degToRad(camera.fov), t = Math.tan(vf / 2);
-  const fitH = (wide ? 1.22 : 1.5) / (2 * t), fitW = 0.95 / (2 * t * camera.aspect);
-  radius = Math.max(fitH, fitW);
-  camera.updateProjectionMatrix();
-  // shift the view so the figure lands on the right third (wide) or upper half (phone)
+  const w = hero.clientWidth, h = hero.clientHeight, wide = w > 760;
+  renderer.setSize(w, h, false); camera.aspect = w / h;
+  const t = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+  radius = Math.max((wide ? 1.22 : 1.5) / (2 * t), 1.0 / (2 * t * camera.aspect));
   if (POSTER) camera.clearViewOffset();
   else if (wide) camera.setViewOffset(w, h, -w * 0.17, 0, w, h);
   else camera.setViewOffset(w, h, 0, h * 0.12, w, h);
@@ -388,140 +387,100 @@ function resize(){
 }
 addEventListener("resize", resize); resize();
 
-/* ---------- material colour tuning (see build log step 08) ---------- */
+/* ---------- material tuning: generated PBR maps look washed out under studio light ---------- */
 function tuneMaterial(mat){
   if (!mat) return;
-  mat.metalness = 0; mat.envMapIntensity = 0.55;
+  mat.metalness = 0; mat.envMapIntensity = 0.6;
   const mp = mat.map;
   if (mp && mp.image){
     try{
       const c = document.createElement("canvas"); c.width = mp.image.width; c.height = mp.image.height;
-      const x = c.getContext("2d"); x.filter = "saturate(1.25) contrast(1.05)"; x.drawImage(mp.image, 0, 0);
-      const t = new THREE.CanvasTexture(c); t.flipY = mp.flipY; t.encoding = mp.encoding; t.wrapS = mp.wrapS; t.wrapT = mp.wrapT; t.anisotropy = 4;
-      mat.map = t;
+      const x = c.getContext("2d"); x.filter = "saturate(1.12) contrast(1.04)"; x.drawImage(mp.image, 0, 0);
+      const tx = new THREE.CanvasTexture(c); tx.flipY = mp.flipY; tx.encoding = mp.encoding; tx.wrapS = mp.wrapS; tx.wrapT = mp.wrapT; tx.anisotropy = 4;
+      mat.map = tx;
     }catch(e){}
   }
   mat.needsUpdate = true;
 }
-function posedBox(root){
-  root.updateMatrixWorld(true);
-  const box = new THREE.Box3(), v = new THREE.Vector3();
-  root.traverse(o => {
-    if (!o.isMesh) return;
-    const pos = o.geometry.attributes.position, step = Math.max(1, Math.floor(pos.count / 4000));
-    if (o.isSkinnedMesh) o.skeleton.update();
-    for (let i = 0; i < pos.count; i += step){
-      v.fromBufferAttribute(pos, i);
-      if (o.isSkinnedMesh) o.boneTransform(i, v);
-      v.applyMatrix4(o.matrixWorld); box.expandByPoint(v);
-    }
-  });
-  return box;
-}
 
 /* ---------- load ---------- */
-let mixer = null, action = null, dancing = !reduceMotion && !POSTER;
-const clock = new THREE.Clock();
 function startLoad(){
   new THREE.GLTFLoader().load(MODEL_URL, gltf => {
     const m = gltf.scene;
-    m.traverse(o => { if (o.isMesh){ o.castShadow = true; o.frustumCulled = false; tuneMaterial(o.material); } });
-    if (gltf.animations.length){
-      mixer = new THREE.AnimationMixer(m);
-      const clip = gltf.animations.reduce((a, b) => b.duration > a.duration ? b : a);
-      clip.tracks.forEach(t => {                       // dance in place
-        if (!/\.position$/.test(t.name) || !/hip|root|pelvis/i.test(t.name)) return;
-        const v = t.values, x0 = v[0], z0 = v[2];
-        for (let i = 0; i < v.length; i += 3){ v[i] = x0; v[i + 2] = z0; }
-      });
-      action = mixer.clipAction(clip); action.play();
-      mixer.setTime(POSTER ? 0 : 0.0);
-    }
-    const s = 1 / posedBox(m).getSize(new THREE.Vector3()).y; m.scale.multiplyScalar(s);
-    const b = posedBox(m), c = b.getCenter(new THREE.Vector3());
-    m.position.set(-c.x, -b.min.y, -c.z);
+    m.traverse(o => { if (o.isMesh){ o.castShadow = true; tuneMaterial(o.material); } });
+    const box = new THREE.Box3().setFromObject(m), size = box.getSize(new THREE.Vector3());
+    m.scale.setScalar(1 / size.y);
+    const b2 = new THREE.Box3().setFromObject(m), c = b2.getCenter(new THREE.Vector3());
+    m.position.set(-c.x, -b2.min.y, -c.z);
     holder.add(m);
-    target.set(0, 0.52, 0);
-    $("motionBtn").hidden = !mixer || POSTER;
-    setDancing(dancing);
     requestAnimationFrame(() => hero.classList.add("live"));
-    measureStart = performance.now(); frames = 0;
-  }, undefined, () => { /* keep the poster */ });
+  }, undefined, () => {});
 }
-// let the poster paint first, then fetch the 3D model
 if (document.readyState === "complete") setTimeout(startLoad, 150); else addEventListener("load", () => setTimeout(startLoad, 150));
 
-/* ---------- dance / still ---------- */
-function setDancing(on){
-  dancing = on && !!mixer;
-  $("motionBtn").textContent = dancing ? "止める" : "踊らせる";
-  if (mixer && !dancing){ mixer.setTime(0); }   // same pose as the poster
-}
-$("motionBtn").addEventListener("click", () => { userChose = true; setDancing(!dancing); });
-let userChose = false, measureStart = 0, frames = 0, lite = false;
+/* ---------- view: quaternions, no limits ---------- */
+const view = new THREE.Quaternion(), goal = new THREE.Quaternion();
+const eul = new THREE.Euler(), rad = THREE.MathUtils.degToRad;
+const rest = new THREE.Quaternion().setFromEuler(new THREE.Euler(-rad(6), 0, 0, "YXZ"));
+goal.copy(rest); view.copy(rest);
 
-/* ---------- view control ---------- */
-const view = { yaw: 0, pitch: 6 }, goal = { yaw: 0, pitch: 6 };
-const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-addEventListener("pointermove", e => {
+// PC: cursor over the hero -> one full turn horizontally and one full turn vertically
+let lastPointer = null;
+hero.addEventListener("pointermove", e => {
   if (e.pointerType !== "mouse") return;
-  goal.yaw = (e.clientX / innerWidth - 0.5) * 70;
-  goal.pitch = 6 + (e.clientY / innerHeight - 0.5) * 30;
+  const r = hero.getBoundingClientRect();
+  const yaw = ((e.clientX - r.left) / r.width - 0.5) * 360;
+  const pitch = (0.5 - (e.clientY - r.top) / r.height) * 360 + 6;
+  goal.setFromEuler(eul.set(-rad(pitch), rad(yaw), 0, "YXZ"));
+  lastPointer = e;
 }, { passive: true });
-document.addEventListener("mouseleave", () => { goal.yaw = 0; goal.pitch = 6; });
+hero.addEventListener("mouseleave", () => goal.copy(rest));
 
-let base = null, gyroOn = false;
-function onOrient(e){
-  if (e.beta == null) return;
-  if (!gyroOn){ gyroOn = true; $("gyroBtn").hidden = true; $("hint").textContent = "Tilt your phone"; }
-  // portrait vs landscape: swap axes so "tilt sideways" always turns the figure
-  const ang = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
-  let lr = e.gamma, fb = e.beta;
-  if (ang === 90){ lr = e.beta; fb = -e.gamma; } else if (ang === -90 || ang === 270){ lr = -e.beta; fb = e.gamma; }
-  if (!base) base = { lr, fb };
-  base.lr += (lr - base.lr) * 0.004; base.fb += (fb - base.fb) * 0.004;   // drift the neutral pose slowly
-  goal.yaw = clamp((lr - base.lr) * 1.2, -35, 35);
-  goal.pitch = clamp(6 + (fb - base.fb) * 0.9, -10, 25);
+// Phone: the screen is a window -- device orientation drives the camera directly
+const qX = new THREE.Quaternion(-Math.SQRT1_2, 0, 0, Math.SQRT1_2), zee = new THREE.Vector3(0, 0, 1), up = new THREE.Vector3(0, 1, 0);
+const qScreen = new THREE.Quaternion(), heading = new THREE.Quaternion();
+let devQ = null, gyroOn = false, needCenter = true;
+function screenAngle(){ return (screen.orientation && screen.orientation.angle) || window.orientation || 0; }
+function recenter(){
+  if (!devQ) return;
+  const f = new THREE.Vector3(0, 0, -1).applyQuaternion(devQ);
+  heading.setFromAxisAngle(up, -Math.atan2(-f.x, -f.z));   // current heading looks at the figure's front
 }
+function onOrient(e){
+  if (e.alpha == null) return;
+  if (!gyroOn){ gyroOn = true; $("gyroBtn").hidden = true; $("centerBtn").hidden = POSTER; $("hint").textContent = "Point your phone"; }
+  eul.set(rad(e.beta), rad(e.alpha), -rad(e.gamma), "YXZ");
+  devQ = new THREE.Quaternion().setFromEuler(eul).multiply(qX);
+  qScreen.setFromAxisAngle(zee, -rad(screenAngle())); devQ.multiply(qScreen);
+  if (needCenter){ recenter(); needCenter = false; }
+  goal.copy(heading).multiply(devQ);
+}
+$("centerBtn").addEventListener("click", recenter);
 if (coarse && typeof DeviceOrientationEvent !== "undefined"){
   if (typeof DeviceOrientationEvent.requestPermission === "function"){
-    $("gyroBtn").hidden = POSTER;      // iOS: needs a tap
-    $("hint").textContent = "Tap to tilt";
+    $("gyroBtn").hidden = POSTER; $("hint").textContent = "Tap to tilt";
     $("gyroBtn").addEventListener("click", async () => {
-      try{ if (await DeviceOrientationEvent.requestPermission() === "granted") addEventListener("deviceorientation", onOrient); }
-      catch(e){}
+      try{ if (await DeviceOrientationEvent.requestPermission() === "granted") addEventListener("deviceorientation", onOrient); }catch(e){}
       $("gyroBtn").hidden = true;
     });
   } else addEventListener("deviceorientation", onOrient);
 }
 if (!coarse) $("hint").textContent = "Move your cursor";
-window.__orient = onOrient;                         // used by the automated check
-window.__view = goal;
+window.__orient = onOrient; window.__goal = goal;    // used by the automated check
 
 /* ---------- loop: pause when the hero is off screen ---------- */
 let visible = true;
 new IntersectionObserver(es => { visible = es[0].isIntersecting; if (visible) requestAnimationFrame(tick); }, { threshold: 0.02 }).observe(hero);
-const dirV = new THREE.Vector3(), eul = new THREE.Euler();
+const fwd = new THREE.Vector3(), clock = new THREE.Clock();
 function tick(){
   if (!visible) return;
-  const dt = Math.min(clock.getDelta(), 0.1);
-  if (mixer && dancing) mixer.update(dt);
-  const k = reduceMotion ? 1 : 0.08;
-  view.yaw += (goal.yaw - view.yaw) * k; view.pitch += (goal.pitch - view.pitch) * k;
-  eul.set(-THREE.MathUtils.degToRad(view.pitch), THREE.MathUtils.degToRad(view.yaw), 0, "YXZ");
-  camera.quaternion.setFromEuler(eul);
-  dirV.set(0, 0, -1).applyQuaternion(camera.quaternion);
-  camera.position.copy(target).addScaledVector(dirV, -radius);
+  const dt = Math.min(clock.getDelta(), 0.25);
+  view.slerp(goal, reduceMotion ? 1 : 1 - Math.exp(-dt * 7));   // time-based easing
+  camera.quaternion.copy(view);
+  fwd.set(0, 0, -1).applyQuaternion(view);
+  camera.position.copy(center).addScaledVector(fwd, -radius);
+  floor.visible = camera.position.y > 0.02;            // the floor would hide the figure from below
   renderer.render(scene, camera);
-  // adaptive quality: if the first ~2 s of dancing run under 24 fps, switch to the still figure
-  if (mixer && dancing && !lite && !userChose && measureStart){
-    frames++;
-    const el = performance.now() - measureStart;
-    if (el > 2200){
-      const fps = frames * 1000 / el; measureStart = 0;
-      if (fps < 24){ lite = true; setDancing(false); $("spec").innerHTML = "<b>STILL</b> · 軽量モード（" + Math.round(fps) + " fps）"; }
-    }
-  }
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
